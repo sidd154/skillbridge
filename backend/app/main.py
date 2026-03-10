@@ -14,12 +14,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-from .routers import auth, candidates, recruiters, jobs, websockets
+from .routers import auth, candidates, recruiters, jobs, tests, websockets
 
 app.include_router(auth.router)
 app.include_router(candidates.router)
 app.include_router(recruiters.router)
 app.include_router(jobs.router)
+app.include_router(tests.router)
 app.include_router(websockets.router)
 
 @app.get("/")

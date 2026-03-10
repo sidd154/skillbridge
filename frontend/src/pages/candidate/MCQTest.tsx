@@ -1,46 +1,142 @@
-import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, useEffect, useRef } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { motion } from "framer-motion";
+import api from "../../services/api";
 
 export default function MCQTest() {
     const navigate = useNavigate();
+    const [searchParams] = useSearchParams();
+    const sessionId = searchParams.get("session");
+
     const [currentQuestion, setCurrentQuestion] = useState(0);
     const [answers, setAnswers] = useState<Record<number, string>>({});
     const [proctorWarning, setProctorWarning] = useState<string | null>(null);
     const [submitting, setSubmitting] = useState(false);
 
-    const questions = [
-        { id: 1, text: "Which hook is used to manage local component state in React?", options: ["useEffect", "useState", "useContext", "useReducer"] },
-        { id: 2, text: "In Python, which built-in data structure is unordered and contains unique elements?", options: ["List", "Dictionary", "Set", "Tuple"] },
-        { id: 3, text: "What does the 'A' in ACID properties of databases stand for?", options: ["Atomicity", "Availability", "Automation", "Architecture"] }
-    ];
+    // WebSocket Reference
+    const socketRef = useRef<WebSocket | null>(null);
 
+    const [questions, setQuestions] = useState<any[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+
+    useEffect(() => {
+        if (!sessionId) {
+            setError("No test session found. Please upload a resume first.");
+            setLoading(false);
+            return;
+        }
+
+        const fetchQuestions = async () => {
+            try {
+                const response = await api.get(`/tests/${sessionId}`);
+                setQuestions(response.data.questions);
+            } catch (err: any) {
+                setError(err.response?.data?.detail || "Failed to load test questions");
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        fetchQuestions();
+    }, [sessionId]);
+
+    // Initialize WebSocket Connection for Proctoring
+    useEffect(() => {
+        if (!sessionId) return;
+
+        const wsUrl = import.meta.env.VITE_WS_URL || "ws://localhost:8000/ws";
+        const socket = new WebSocket(`${wsUrl}/proctoring/${sessionId}`);
+
+        socket.onopen = () => {
+            console.log("Proctoring WebSocket Connected");
+        };
+
+        socket.onerror = (error) => {
+            console.error("Proctoring WebSocket Error:", error);
+        };
+
+        socketRef.current = socket;
+
+        return () => {
+            if (socket.readyState === WebSocket.OPEN) {
+                socket.close();
+            }
+        };
+    }, [sessionId]);
+
+    // Live Event Listeners
     useEffect(() => {
         const handleVisibilityChange = () => {
             if (document.hidden) {
                 setProctorWarning("⚠️ Tab switch detected! This violates proctoring rules.");
+
+                // Transmit live event to LangGraph Agent 3
+                if (socketRef.current?.readyState === WebSocket.OPEN) {
+                    socketRef.current.send(JSON.stringify({
+                        type: "tab_switch",
+                        timestamp: new Date().toISOString()
+                    }));
+                }
+
                 setTimeout(() => setProctorWarning(null), 5000);
             }
         };
+
+        const handleCopyPaste = (e: ClipboardEvent) => {
+            e.preventDefault();
+            setProctorWarning("⚠️ Copy/Paste is disabled during proctored tests.");
+
+            if (socketRef.current?.readyState === WebSocket.OPEN) {
+                socketRef.current.send(JSON.stringify({
+                    type: "clipboard_event",
+                    timestamp: new Date().toISOString()
+                }));
+            }
+
+            setTimeout(() => setProctorWarning(null), 5000);
+        };
+
         document.addEventListener("visibilitychange", handleVisibilityChange);
-        return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
+        document.addEventListener("copy", handleCopyPaste);
+        document.addEventListener("paste", handleCopyPaste);
+
+        return () => {
+            document.removeEventListener("visibilitychange", handleVisibilityChange);
+            document.removeEventListener("copy", handleCopyPaste);
+            document.removeEventListener("paste", handleCopyPaste);
+        };
     }, []);
 
     const handleSelect = (option: string) => {
         setAnswers({ ...answers, [currentQuestion]: option });
     };
 
-    const handleNext = () => {
+    const handleNext = async () => {
         if (currentQuestion < questions.length - 1) {
             setCurrentQuestion(curr => curr + 1);
         } else {
             setSubmitting(true);
-            setTimeout(() => {
-                localStorage.setItem("hasPassport", "true");
+            try {
+                // Submit answers to be conceptually evaluated by the backend
+                const response = await api.post(`/tests/${sessionId}/submit`, {
+                    answers: answers
+                });
+
+                if (response.data.passport_issued) {
+                    localStorage.setItem("hasPassport", "true");
+                }
                 navigate("/dashboard/candidate");
-            }, 2000);
+            } catch (err: any) {
+                alert(err.response?.data?.detail || "Failed to submit test");
+                setSubmitting(false);
+            }
         }
     };
+
+    if (loading) return <div className="p-8 text-center text-muted">Loading AI-generated questions from your resume skills...</div>;
+    if (error) return <div className="p-8 text-center text-error">{error}</div>;
+    if (questions.length === 0) return <div className="p-8 text-center text-muted">No questions could be generated.</div>;
 
     return (
         <div className="max-w-4xl mx-auto space-y-8 relative">
@@ -74,19 +170,19 @@ export default function MCQTest() {
                     Question {currentQuestion + 1} of {questions.length}
                 </div>
                 <h2 className="text-2xl font-bold text-white mb-8 leading-relaxed">
-                    {questions[currentQuestion].text}
+                    {questions[currentQuestion].question || questions[currentQuestion].text}
                 </h2>
 
                 <div className="space-y-3">
-                    {questions[currentQuestion].options.map((option, idx) => {
+                    {questions[currentQuestion].options.map((option: string, idx: number) => {
                         const isSelected = answers[currentQuestion] === option;
                         return (
                             <button
                                 key={idx}
                                 onClick={() => handleSelect(option)}
                                 className={`w-full text-left p-4 rounded-xl border transition-all ${isSelected
-                                        ? 'bg-primary/20 border-primary text-white scale-[1.01]'
-                                        : 'bg-surface/50 border-white/5 text-muted hover:border-white/20 hover:bg-surface'
+                                    ? 'bg-primary/20 border-primary text-white scale-[1.01]'
+                                    : 'bg-surface/50 border-white/5 text-muted hover:border-white/20 hover:bg-surface'
                                     }`}
                             >
                                 <span className={`inline-block w-6 h-6 rounded-full border text-center text-sm leading-5 mr-3 ${isSelected ? 'border-primary bg-primary text-white' : 'border-white/20'}`}>

@@ -1,13 +1,24 @@
-import { Outlet, useLocation } from "react-router-dom";
+import { Outlet, useLocation, Navigate, useNavigate } from "react-router-dom";
 
 export default function MainLayout() {
     const location = useLocation();
-    // Mock auth check until Supabase hook is wired
-    const isAuthenticated = false;
+    const navigate = useNavigate();
+
+    // Real auth check using the JWT token stored from Login
+    const isAuthenticated = !!localStorage.getItem("accessToken");
 
     if (!isAuthenticated && location.pathname !== "/") {
-        // return <Navigate to="/login" state={{ from: location }} replace />;
+        return <Navigate to="/login" state={{ from: location }} replace />;
     }
+
+    const handleSignOut = () => {
+        localStorage.removeItem("accessToken");
+        localStorage.removeItem("userRole");
+        localStorage.removeItem("candidateName");
+        localStorage.removeItem("candidateEmail");
+        localStorage.removeItem("hasPassport");
+        navigate("/login");
+    };
 
     return (
         <div className="min-h-screen bg-background flex">
@@ -30,7 +41,7 @@ export default function MainLayout() {
             <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
                 <header className="h-16 border-b border-white/10 bg-surface/30 backdrop-blur-md flex items-center justify-between px-6 z-10 relative">
                     <h2 className="text-sm font-medium text-muted">Workspace</h2>
-                    <button className="text-sm text-muted hover:text-white">Sign Out</button>
+                    <button onClick={handleSignOut} className="text-sm font-medium text-error hover:text-error-light transition-colors">Sign Out</button>
                 </header>
                 <div className="flex-1 overflow-y-auto p-6 relative">
                     <Outlet />

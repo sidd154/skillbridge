@@ -1,24 +1,44 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
+import api from "../services/api";
 
 export default function Login() {
     const navigate = useNavigate();
     const [loading, setLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
 
     const [email, setEmail] = useState("");
+    const [password, setPassword] = useState("");
 
-    const handleSubmit = (e: React.FormEvent) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setLoading(true);
-        // Mock login and routing logic based on role
-        setTimeout(() => {
-            localStorage.setItem("candidateName", email.split('@')[0] || "Candidate");
+        setError(null);
+
+        try {
+            const response = await api.post("/auth/login", { email, password });
+            const { access_token, role } = response.data;
+
+            // Store real auth token and metadata
+            localStorage.setItem("accessToken", access_token);
+            localStorage.setItem("userRole", role);
             localStorage.setItem("candidateEmail", email);
-            const role = "candidate"; // mock
-            if (role === "candidate") navigate('/dashboard/candidate');
-            else navigate('/dashboard/recruiter');
-        }, 1000);
+            localStorage.setItem("candidateName", email.split('@')[0] || "User");
+
+            // Route dynamically based on true database role
+            if (role === "candidate") {
+                navigate('/dashboard/candidate');
+            } else if (role === "recruiter") {
+                navigate('/dashboard/recruiter');
+            } else {
+                setError("Undefined role assigned. Contact support.");
+            }
+        } catch (err: any) {
+            setError(err.response?.data?.detail || "Invalid credentials or Server Error");
+        } finally {
+            setLoading(false);
+        }
     };
 
     return (
@@ -40,6 +60,12 @@ export default function Login() {
                     <p className="text-muted">Log in to your SkillBridge account.</p>
                 </div>
 
+                {error && (
+                    <div className="mb-4 p-3 rounded-lg bg-error/20 border border-error/50 text-error-light text-sm text-center">
+                        {error}
+                    </div>
+                )}
+
                 <form onSubmit={handleSubmit} className="space-y-4">
                     <div>
                         <label className="block text-sm font-medium text-muted mb-1">Email</label>
@@ -50,10 +76,10 @@ export default function Login() {
                             <label className="block text-sm font-medium text-muted">Password</label>
                             <a href="#" className="text-xs text-primary-light hover:underline">Forgot?</a>
                         </div>
-                        <input required type="password" className="w-full bg-surface/50 border border-white/10 rounded-lg px-4 py-2 text-white focus:ring-2 focus:ring-primary focus:outline-none transition-all" placeholder="••••••••" />
+                        <input required type="password" value={password} onChange={e => setPassword(e.target.value)} className="w-full bg-surface/50 border border-white/10 rounded-lg px-4 py-2 text-white focus:ring-2 focus:ring-primary focus:outline-none transition-all" placeholder="••••••••" />
                     </div>
 
-                    <button type="submit" disabled={loading} className="btn-primary w-full py-3 mt-4 text-white font-medium hover:shadow-[0_0_20px_rgba(79,70,229,0.3)]">
+                    <button type="submit" disabled={loading} className="btn-primary w-full py-3 mt-4 text-white font-medium hover:shadow-[0_0_20px_rgba(79,70,229,0.3)] disabled:opacity-50">
                         {loading ? "Signing in..." : "Sign In"}
                     </button>
                 </form>

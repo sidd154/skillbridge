@@ -3,6 +3,8 @@ import shutil
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
 from ..services.auth_middleware import get_current_user
 from ..services.supabase_client import supabase
+from ..agents.graphs.resume_parser_graph import create_resume_parser_graph
+from ..agents.graphs.test_generator_graph import create_test_generator_graph
 
 router = APIRouter(prefix="/candidates", tags=["candidates"])
 
@@ -33,9 +35,29 @@ async def upload_resume(file: UploadFile = File(...), user_id: str = Depends(get
     # Update Supabase
     supabase.table("candidates").update({"resume_path": file_path}).eq("id", user_id).execute()
     
-    # In a real impl, this would trigger Agent 1 (Resume Parser Graph) asynchronously here.
+    # Trigger Agent 1: Resume Parser
+    parser_graph = create_resume_parser_graph()
+    parser_state = {"pdf_path": file_path, "candidate_id": user_id, "raw_text": "", "extracted_skills": []}
+    parser_result = parser_graph.invoke(parser_state)
+    skills = parser_result.get("extracted_skills", [])
     
-    return {"message": "Resume uploaded successfully", "path": file_path}
+    # Trigger Agent 2: Test Generator
+    test_graph = create_test_generator_graph()
+    test_state = {"extracted_skills": skills, "candidate_id": user_id, "generated_questions": []}
+    test_result = test_graph.invoke(test_state)
+    questions = test_result.get("generated_questions", [])
+    
+    # Fetch the session ID we just created in test_generator_graph
+    # We fetch the latest pending test session for this user
+    session_res = supabase.table("test_sessions").select("id").eq("candidate_id", user_id).order("created_at", desc=True).limit(1).execute()
+    session_id = session_res.data[0]["id"] if session_res.data else None
+
+    return {
+        "message": "Resume parsed and test generated successfully", 
+        "path": file_path, 
+        "skills_extracted": len(skills),
+        "test_session_id": session_id
+    }
 
 @router.get("/passport")
 async def get_passport(user_id: str = Depends(get_current_user)):

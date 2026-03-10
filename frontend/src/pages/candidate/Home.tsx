@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { motion } from "framer-motion";
 import { useNavigate } from "react-router-dom";
+import api from "../../services/api";
 
 export default function CandidateHome() {
     const navigate = useNavigate();
@@ -17,14 +18,29 @@ export default function CandidateHome() {
         if (passportStatus === "true") setHasPassport(true);
     }, []);
 
-    const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files.length > 0) {
+            const file = e.target.files[0];
             setUploading(true);
-            // Simulate upload and processing delay
-            setTimeout(() => {
+
+            const formData = new FormData();
+            formData.append("file", file);
+
+            try {
+                // Real LangGraph integration: This endpoint compiles the PDF, extracts skills via Agent 1, and generates tests via Agent 2
+                const response = await api.post("/candidates/upload-resume", formData, {
+                    headers: { 'Content-Type': 'multipart/form-data' }
+                });
+
+                const { test_session_id } = response.data;
+                // Navigate to the test flow with real session ID
+                navigate(`/dashboard/candidate/test?session=${test_session_id}`);
+            } catch (err: any) {
+                console.error("Upload failed", err);
+                alert(err.response?.data?.detail || "Failed to parse resume.");
+            } finally {
                 setUploading(false);
-                navigate("/dashboard/candidate/test"); // Go to test flow
-            }, 2000);
+            }
         }
     };
 

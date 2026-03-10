@@ -4,21 +4,74 @@ import { motion } from "framer-motion";
 export default function InterviewRoom() {
     const [isRecording, setIsRecording] = useState(false);
     const [transcript, setTranscript] = useState<{ speaker: string, text: string }[]>([]);
+    const [isConnecting, setIsConnecting] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+
     const wsRef = useRef<WebSocket | null>(null);
+    const recognitionRef = useRef<any>(null);
 
     useEffect(() => {
-        // Mock WebSocket Connection Setup
-        wsRef.current = new WebSocket("ws://localhost:8000/ws/interview/mock-session");
+        // Initialize WebSocket to the backend Agent 5
+        const sessionId = "demo-interview-" + Math.floor(Math.random() * 10000);
+        const wsUrl = import.meta.env.VITE_WS_URL || "ws://localhost:8000/ws";
+
+        wsRef.current = new WebSocket(`${wsUrl}/interview/${sessionId}`);
+
+        wsRef.current.onopen = () => {
+            setIsConnecting(false);
+            console.log("Connected to AI Interviewer");
+        };
 
         wsRef.current.onmessage = (event) => {
             const data = JSON.parse(event.data);
             setTranscript(prev => [...prev, { speaker: data.speaker, text: data.text }]);
-            // Trigger Web Speech API Synthesis for Bot Voice here
+            // Trigger Web Speech API Synthesis for Bot Voice
             speakWithWebSpeech(data.text);
         };
 
+        wsRef.current.onerror = () => {
+            setError("Failed to connect to the interview server.");
+            setIsConnecting(false);
+        };
+
+        // Initialize Speech Recognition
+        const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+        if (SpeechRecognition) {
+            const recognition = new SpeechRecognition();
+            recognition.continuous = false;
+            recognition.interimResults = false;
+            recognition.lang = 'en-US';
+
+            recognition.onresult = (event: any) => {
+                const text = event.results[0][0].transcript;
+
+                // Add candidate text to UI
+                setTranscript(prev => [...prev, { speaker: "candidate", text }]);
+
+                // Send text payload to LangGraph Agent via WebSocket
+                if (wsRef.current?.readyState === WebSocket.OPEN) {
+                    wsRef.current.send(JSON.stringify({ text }));
+                }
+            };
+
+            recognition.onerror = (event: any) => {
+                console.error("Speech Recognition Error:", event.error);
+                setIsRecording(false);
+            };
+
+            recognition.onend = () => {
+                setIsRecording(false);
+            };
+
+            recognitionRef.current = recognition;
+        } else {
+            console.warn("Speech recognition not supported in this browser.");
+            setError("Your browser does not support voice recognition. Please use Chrome/Edge.");
+        }
+
         return () => {
             wsRef.current?.close();
+            recognitionRef.current?.stop();
         };
     }, []);
 
@@ -33,16 +86,20 @@ export default function InterviewRoom() {
     };
 
     const toggleRecording = () => {
+        if (!recognitionRef.current) return;
+
         if (isRecording) {
-            setIsRecording(false);
-            // Stop Web Speech Recognition
-            // Send final candidate text to WebSocket
-            const mockCandidateText = "I think React Context is great for global state.";
-            setTranscript(prev => [...prev, { speaker: "candidate", text: mockCandidateText }]);
-            wsRef.current?.send(JSON.stringify({ text: mockCandidateText }));
+            recognitionRef.current.stop();
         } else {
-            setIsRecording(true);
-            // Start Web Speech Recognition
+            // Stop any current bot speech before recording
+            window.speechSynthesis.cancel();
+
+            try {
+                recognitionRef.current.start();
+                setIsRecording(true);
+            } catch (e) {
+                console.error("Microphone start error", e);
+            }
         }
     };
 
@@ -61,12 +118,20 @@ export default function InterviewRoom() {
 
             {/* Transcript Area */}
             <div className="flex-1 glass rounded-2xl p-6 overflow-y-auto mb-6 flex flex-col gap-6">
-                {transcript.length === 0 ? (
+                {error ? (
+                    <div className="m-auto text-center text-error flex flex-col items-center">
+                        <p>{error}</p>
+                    </div>
+                ) : isConnecting ? (
                     <div className="m-auto text-center text-muted flex flex-col items-center">
                         <div className="w-16 h-16 rounded-full bg-white/5 flex items-center justify-center mb-4">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" /><path d="M19 10v2a7 7 0 0 1-14 0v-2" /><line x1="12" x2="12" y1="19" y2="22" /></svg>
+                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="animate-spin"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
                         </div>
                         <p>Connecting to AI Interviewer...</p>
+                    </div>
+                ) : transcript.length === 0 ? (
+                    <div className="m-auto text-center text-muted">
+                        <p>Connection established. The interview will begin shortly.</p>
                     </div>
                 ) : (
                     transcript.map((msg, idx) => (

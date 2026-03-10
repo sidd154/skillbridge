@@ -34,21 +34,25 @@ async def upload_resume(file: UploadFile = File(...), user_id: str = Depends(get
     
     # Ensure both profile and candidate records exist (fixes FK violations for test sessions)
     try:
-        # 1. Ensure Profile exists (candidates table depends on profiles.id)
-        # We fetch existing to preserve data if it exists, or provide safe fallback
-        email_prefix = file.filename.split('_')[0] if "_" in file.filename else "User"
-        supabase.table("profiles").upsert({
-            "id": user_id, 
-            "role": "candidate",
-            "email": f"{user_id}@temp.com", # Fallback, usually existing row will have correct email
-            "full_name": email_prefix
-        }, on_conflict="id").execute()
+        # 1. Check if Profile exists
+        profile_check = supabase.table("profiles").select("id").eq("id", user_id).execute()
+        if not profile_check.data:
+            # Create a shell profile if missing (common for manual test users)
+            email_prefix = file.filename.split('_')[0] if "_" in file.filename else "User"
+            supabase.table("profiles").insert({
+                "id": user_id, 
+                "role": "candidate",
+                "email": f"{user_id}@temp-skillbridge.ai", 
+                "full_name": email_prefix
+            }).execute()
 
         # 2. Ensure Candidate record exists and update resume_path
         supabase.table("candidates").upsert({"id": user_id, "resume_path": file_path}, on_conflict="id").execute()
     except Exception as e:
         print(f"Database Guard Error: {e}")
-        raise HTTPException(status_code=500, detail=f"Database integrity guard failed: {str(e)}")
+        # We continue anyway if it's just a 'duplicate' error, but stop for others
+        if "duplicate" not in str(e).lower():
+             raise HTTPException(status_code=500, detail=f"Database integrity guard failed: {str(e)}")
     
     # Trigger Agent 1: Resume Parser
     skills = []

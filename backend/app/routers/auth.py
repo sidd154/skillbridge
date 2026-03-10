@@ -90,15 +90,30 @@ async def login(req: LoginRequest):
             "password": req.password
         })
         
-        # Fetch profile role
-        profile = supabase.table("profiles").select("role").eq("id", auth_res.user.id).single().execute()
-        role = profile.data.get("role") if profile.data else None
+        user = auth_res.user
+        session = auth_res.session
+        
+        if not user or not session:
+            raise HTTPException(status_code=401, detail="Login failed: no user returned")
+        
+        # Attempt to fetch profile role — gracefully fall back if table doesn't exist yet
+        role = "candidate"  # safe default
+        try:
+            profile = supabase.table("profiles").select("role").eq("id", user.id).single().execute()
+            if profile.data:
+                role = profile.data.get("role", "candidate")
+        except Exception:
+            pass  # profiles table missing or empty — use default
         
         return {
-            "access_token": auth_res.session.access_token,
-            "refresh_token": auth_res.session.refresh_token,
+            "access_token": session.access_token,
+            "refresh_token": session.refresh_token,
             "role": role,
-            "user_id": auth_res.user.id
+            "user_id": user.id,
+            "email": user.email,
+            "full_name": user.user_metadata.get("full_name", req.email.split("@")[0]) if user.user_metadata else req.email.split("@")[0]
         }
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=401, detail="Invalid credentials")
+        raise HTTPException(status_code=401, detail=f"Invalid credentials: {str(e)}")

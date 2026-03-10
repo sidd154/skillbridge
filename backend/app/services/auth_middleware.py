@@ -1,26 +1,20 @@
 from fastapi import Depends, HTTPException
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-import jwt
-import os
+from .supabase_client import supabase
 
 security = HTTPBearer()
 
 def verify_jwt(credentials: HTTPAuthorizationCredentials = Depends(security)):
     token = credentials.credentials
-    jwt_secret = os.environ.get("SUPABASE_JWT_SECRET")
-    
-    if not jwt_secret:
-        # In a generic environment without the secret loaded, we might bypass or error.
-        raise HTTPException(status_code=500, detail="JWT Configuration Error")
-        
     try:
-        payload = jwt.decode(token, jwt_secret, algorithms=["HS256"], audience="authenticated")
-        return payload
-    except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail="Token expired")
-    except jwt.InvalidTokenError:
-        raise HTTPException(status_code=401, detail="Invalid token")
+        # Use Supabase's own server-side validation - no JWT secret needed
+        user_response = supabase.auth.get_user(token)
+        if not user_response or not user_response.user:
+            raise HTTPException(status_code=401, detail="Invalid or expired token")
+        return user_response.user
+    except Exception as e:
+        raise HTTPException(status_code=401, detail=f"Authentication failed: {str(e)}")
 
-def get_current_user(payload: dict = Depends(verify_jwt)):
-    # Returns the user ID extracted from the Supabase JWT
-    return payload.get("sub")
+def get_current_user(user = Depends(verify_jwt)):
+    # Returns the user ID from the validated Supabase user object
+    return user.id

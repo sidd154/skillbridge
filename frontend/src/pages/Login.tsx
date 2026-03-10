@@ -18,13 +18,13 @@ export default function Login() {
 
         try {
             const response = await api.post("/auth/login", { email, password });
-            const { access_token, role } = response.data;
+            const { access_token, role, full_name } = response.data;
 
             // Store real auth token and metadata
             localStorage.setItem("accessToken", access_token);
             localStorage.setItem("userRole", role);
             localStorage.setItem("candidateEmail", email);
-            localStorage.setItem("candidateName", email.split('@')[0] || "User");
+            localStorage.setItem("candidateName", full_name || email.split('@')[0] || "User");
 
             // Route dynamically based on true database role
             if (role === "candidate") {

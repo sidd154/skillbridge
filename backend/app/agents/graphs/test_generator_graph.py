@@ -1,7 +1,7 @@
 import uuid
 from langgraph.graph import StateGraph, END
 from ..state.models import TestGeneratorState
-from .test_gen_nodes import generate_questions_for_skills
+from ..nodes.test_gen_nodes import generate_questions_for_skills
 from ...services.supabase_client import supabase
 
 def generate_questions_node(state: TestGeneratorState):

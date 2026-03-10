@@ -1,6 +1,6 @@
 from langgraph.graph import StateGraph, END
 from ..state.models import BotInterviewState
-from .interview_nodes import generate_opening, analyze_and_next_question
+from ..nodes.interview_nodes import generate_opening, analyze_and_next_question
 from ...services.supabase_client import supabase
 
 def load_context_node(state: BotInterviewState):

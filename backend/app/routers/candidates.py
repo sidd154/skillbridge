@@ -25,33 +25,49 @@ async def upload_resume(file: UploadFile = File(...), user_id: str = Depends(get
     os.makedirs(STORAGE_PATH, exist_ok=True)
     file_path = os.path.join(STORAGE_PATH, f"{user_id}_{file.filename}")
     
-    # Save local file
+    # Save file to disk
     try:
         with open(file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Could not save file: {e}")
-        
-    # Update Supabase
-    supabase.table("candidates").update({"resume_path": file_path}).eq("id", user_id).execute()
+    
+    # Update Supabase — OK if candidates table doesn't exist yet
+    try:
+        supabase.table("candidates").update({"resume_path": file_path}).eq("id", user_id).execute()
+    except Exception as e:
+        print(f"Warning: Could not update resume_path in DB (table may not exist): {e}")
     
     # Trigger Agent 1: Resume Parser
-    parser_graph = create_resume_parser_graph()
-    parser_state = {"pdf_path": file_path, "candidate_id": user_id, "raw_text": "", "extracted_skills": []}
-    parser_result = parser_graph.invoke(parser_state)
-    skills = parser_result.get("extracted_skills", [])
+    skills = []
+    try:
+        parser_graph = create_resume_parser_graph()
+        parser_state = {"pdf_path": file_path, "candidate_id": user_id, "raw_text": "", "extracted_skills": []}
+        parser_result = parser_graph.invoke(parser_state)
+        skills = parser_result.get("extracted_skills", [])
+        print(f"Agent 1 extracted {len(skills)} skills")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Resume parsing failed: {str(e)}")
+    
+    if not skills:
+        raise HTTPException(status_code=422, detail="No skills could be extracted from the resume. Please upload a detailed technical resume.")
     
     # Trigger Agent 2: Test Generator
-    test_graph = create_test_generator_graph()
-    test_state = {"extracted_skills": skills, "candidate_id": user_id, "generated_questions": []}
-    test_result = test_graph.invoke(test_state)
-    questions = test_result.get("generated_questions", [])
+    session_id = None
+    try:
+        test_graph = create_test_generator_graph()
+        test_state = {"extracted_skills": skills, "candidate_id": user_id, "generated_questions": []}
+        test_graph.invoke(test_state)
+        
+        # Fetch the session just created
+        session_res = supabase.table("test_sessions").select("id").eq("candidate_id", user_id).order("created_at", desc=True).limit(1).execute()
+        session_id = session_res.data[0]["id"] if session_res.data else None
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Test generation failed: {str(e)}")
     
-    # Fetch the session ID we just created in test_generator_graph
-    # We fetch the latest pending test session for this user
-    session_res = supabase.table("test_sessions").select("id").eq("candidate_id", user_id).order("created_at", desc=True).limit(1).execute()
-    session_id = session_res.data[0]["id"] if session_res.data else None
-
+    if not session_id:
+        raise HTTPException(status_code=500, detail="Test session was not created. Ensure the Supabase schema (test_sessions table) has been applied.")
+    
     return {
         "message": "Resume parsed and test generated successfully", 
         "path": file_path, 

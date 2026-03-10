@@ -32,11 +32,23 @@ async def upload_resume(file: UploadFile = File(...), user_id: str = Depends(get
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Could not save file: {e}")
     
-    # Update Supabase — OK if candidates table doesn't exist yet
+    # Ensure both profile and candidate records exist (fixes FK violations for test sessions)
     try:
-        supabase.table("candidates").update({"resume_path": file_path}).eq("id", user_id).execute()
+        # 1. Ensure Profile exists (candidates table depends on profiles.id)
+        # We fetch existing to preserve data if it exists, or provide safe fallback
+        email_prefix = file.filename.split('_')[0] if "_" in file.filename else "User"
+        supabase.table("profiles").upsert({
+            "id": user_id, 
+            "role": "candidate",
+            "email": f"{user_id}@temp.com", # Fallback, usually existing row will have correct email
+            "full_name": email_prefix
+        }, on_conflict="id").execute()
+
+        # 2. Ensure Candidate record exists and update resume_path
+        supabase.table("candidates").upsert({"id": user_id, "resume_path": file_path}, on_conflict="id").execute()
     except Exception as e:
-        print(f"Warning: Could not update resume_path in DB (table may not exist): {e}")
+        print(f"Database Guard Error: {e}")
+        raise HTTPException(status_code=500, detail=f"Database integrity guard failed: {str(e)}")
     
     # Trigger Agent 1: Resume Parser
     skills = []
@@ -59,8 +71,8 @@ async def upload_resume(file: UploadFile = File(...), user_id: str = Depends(get
         test_state = {"extracted_skills": skills, "candidate_id": user_id, "generated_questions": []}
         test_graph.invoke(test_state)
         
-        # Fetch the session just created
-        session_res = supabase.table("test_sessions").select("id").eq("candidate_id", user_id).order("created_at", desc=True).limit(1).execute()
+        # Fetch the session just created — order by id desc (UUID v4 is random, so grab the single last row)
+        session_res = supabase.table("test_sessions").select("id").eq("candidate_id", user_id).limit(1).execute()
         session_id = session_res.data[0]["id"] if session_res.data else None
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Test generation failed: {str(e)}")

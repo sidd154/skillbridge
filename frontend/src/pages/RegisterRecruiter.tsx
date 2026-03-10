@@ -45,15 +45,23 @@ export default function RegisterRecruiter() {
         }
     };
 
-    const handleVerifyOTP = (e: React.FormEvent) => {
+    const [otpCode, setOtpCode] = useState("");
+
+    const handleVerifyOTP = async (e: React.FormEvent) => {
         e.preventDefault();
         setLoading(true);
-        // Supabase typically handles OTP verification via a separate endpoint.
-        // For hackathon sake, we mock the OTP verification step, as auth token is actually
-        // what matters for login. We route them to login directly to login themselves.
-        setTimeout(() => {
+        setError(null);
+        try {
+            await api.post("/auth/verify-otp", {
+                email: form.email,
+                code: otpCode
+            });
             navigate('/login');
-        }, 1000);
+        } catch (err: any) {
+            setError(err.response?.data?.detail || "Invalid verification code. Try 000000 for the demo.");
+        } finally {
+            setLoading(false);
+        }
     }
 
     return (
@@ -128,7 +136,7 @@ export default function RegisterRecruiter() {
                         <p className="text-muted text-sm px-4">We've sent a 6-digit verification code to your work email address to verify your company domain.</p>
 
                         <div className="pt-4">
-                            <input required type="text" maxLength={6} className="w-full tracking-[1em] text-center font-mono text-2xl bg-surface/50 border border-white/10 rounded-lg px-4 py-3 text-white focus:ring-2 focus:ring-primary focus:outline-none" placeholder="000000" />
+                            <input required type="text" maxLength={6} value={otpCode} onChange={(e) => setOtpCode(e.target.value)} className="w-full tracking-[1em] text-center font-mono text-2xl bg-surface/50 border border-white/10 rounded-lg px-4 py-3 text-white focus:ring-2 focus:ring-primary focus:outline-none" placeholder="000000" />
                         </div>
 
                         <button type="submit" disabled={loading} className="btn-primary w-full py-3 mt-6">

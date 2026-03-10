@@ -7,6 +7,7 @@ import MainLayout from "./components/MainLayout";
 import CandidateHome from "./pages/candidate/Home";
 import MCQTest from "./pages/candidate/MCQTest";
 import RecruiterHome from "./pages/recruiter/Home";
+import PostJob from "./pages/recruiter/PostJob";
 
 // Missing pages will be filled iteratively. This establishes the spine.
 function App() {
@@ -23,7 +24,7 @@ function App() {
         <Route path="/dashboard/candidate/test" element={<MCQTest />} />
 
         <Route path="/dashboard/recruiter" element={<RecruiterHome />} />
-        {/* <Route path="/dashboard/recruiter/post-job" element={<PostJob />} /> */}
+        <Route path="/dashboard/recruiter/post-job" element={<PostJob />} />
       </Route>
     </Routes>
   );

@@ -18,19 +18,18 @@ def save_session_node(state: TestGeneratorState):
     candidate_id = state.get("candidate_id")
     questions = state.get("generated_questions", [])
     
-    # Create the test session in Supabase so the candidate can start taking it
     try:
         session = supabase.table("test_sessions").insert({
             "candidate_id": candidate_id,
             "questions": questions,
-            "status": "pending_consent", # Custom flow state
         }).execute()
         
-        print(f"Created Test Session {session.data[0]['id']} with {len(questions)} questions.")
-        return state
+        session_id = session.data[0]['id'] if session.data else 'unknown'
+        print(f"Created Test Session {session_id} with {len(questions)} questions.")
+        return {**state, "session_id": session_id}
     except Exception as e:
         print(f"Failed to save test session: {e}")
-        return state
+        raise e  # Re-raise so the caller knows it failed
 
 def create_test_generator_graph():
     workflow = StateGraph(TestGeneratorState)

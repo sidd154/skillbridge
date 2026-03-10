@@ -82,6 +82,26 @@ async def register_recruiter(req: RecruiterRegisterRequest):
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+@router.post("/verify-otp")
+async def verify_otp(email: str, code: str):
+    # For hackathon/demo, we'll accept '000000' as a master verification code
+    if code != "000000":
+        raise HTTPException(status_code=400, detail="Invalid verification code")
+        
+    try:
+        # Get the profile ID for this email
+        profile = supabase.table("profiles").select("id").eq("email", email).single().execute()
+        if not profile.data:
+            raise HTTPException(status_code=404, detail="User not found")
+            
+        user_id = profile.data["id"]
+        
+        # Verify the recruiter
+        supabase.table("recruiters").update({"is_verified": True}).eq("id", user_id).execute()
+        return {"message": "Email verified successfully. You can now log in."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Verification failed: {str(e)}")
+
 @router.post("/login")
 async def login(req: LoginRequest):
     try:

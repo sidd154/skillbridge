@@ -11,6 +11,10 @@ from ...services.supabase_client import supabase
 llm = ChatOpenAI(model="gpt-4o", temperature=0.7)
 
 def evaluate_answers_node(state: PassportIssuerState):
+    # If score is already provided (e.g. from the tests router), respect it
+    if state.get("score") is not None and state.get("passed") is not None:
+        return state
+
     answers = state.get("answers", [])
     correct_answers = state.get("correct_answers", [])
     
@@ -25,7 +29,7 @@ def evaluate_answers_node(state: PassportIssuerState):
     score = (correct_count / max(total, 1)) * 100
     passed = score >= 70.0
     
-    return {"score": score, "passed": passed}
+    return {**state, "score": score, "passed": passed}
 
 # Roadmap generation AI setup
 roadmap_prompt = ChatPromptTemplate.from_messages([

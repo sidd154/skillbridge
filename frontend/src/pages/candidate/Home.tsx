@@ -10,13 +10,45 @@ export default function CandidateHome() {
     const [uploading, setUploading] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
-    useEffect(() => {
-        const storedName = localStorage.getItem("candidateName");
-        if (storedName) setName(storedName);
+    const [jobs, setJobs] = useState<any[]>([]);
+    const [passport, setPassport] = useState<any>(null);
+    const [loading, setLoading] = useState(true);
 
-        const passportStatus = localStorage.getItem("hasPassport");
-        if (passportStatus === "true") setHasPassport(true);
+    useEffect(() => {
+        const fetchData = async () => {
+            try {
+                const storedName = localStorage.getItem("candidateName");
+                if (storedName) setName(storedName);
+
+                // 1. Fetch Passport
+                const passportRes = await api.get("/candidates/passport");
+                if (passportRes.data.passport) {
+                    setPassport(passportRes.data.passport);
+                    setHasPassport(true);
+                    localStorage.setItem("hasPassport", "true");
+                }
+
+                // 2. Fetch Jobs
+                const jobsRes = await api.get("/jobs/");
+                setJobs(jobsRes.data.jobs || []);
+            } catch (err) {
+                console.error("Failed to fetch candidate data", err);
+            } finally {
+                setLoading(false);
+            }
+        };
+        fetchData();
     }, []);
+
+    const handleApply = async (jobId: string) => {
+        try {
+            await api.post(`/jobs/${jobId}/apply`);
+            alert("Application submitted successfully!");
+            // Refresh jobs to show 'applied' state if we had one, for now just alert
+        } catch (err: any) {
+            alert(err.response?.data?.detail || "Failed to apply. You need a verified passport.");
+        }
+    };
 
     const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files.length > 0) {
@@ -113,36 +145,66 @@ export default function CandidateHome() {
                                     Verified Passport
                                     <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-accent"><circle cx="12" cy="12" r="10" /><path d="m9 12 2 2 4-4" /></svg>
                                 </h3>
-                                <p className="text-xs text-muted mt-1">Expires: Dec 2026</p>
+                                <p className="text-xs text-muted mt-1">Issued: {new Date(passport?.issued_at).toLocaleDateString()}</p>
                             </div>
                             <div className="text-right">
-                                <div className="text-2xl font-black text-accent">98%</div>
+                                <div className="text-2xl font-black text-accent">{passport?.proctoring_score || 100}%</div>
                                 <div className="text-[10px] text-muted uppercase tracking-wider">Trust Score</div>
                             </div>
                         </div>
 
-                        <div className="space-y-3">
-                            <div>
-                                <div className="flex justify-between text-sm mb-1">
-                                    <span className="text-white">ReactJS</span>
-                                    <span className="text-accent text-xs bg-accent/10 px-2 py-0.5 rounded">Advanced</span>
+                        <div className="space-y-4">
+                            {passport?.skills?.slice(0, 3).map((skill: any, idx: number) => (
+                                <div key={idx}>
+                                    <div className="flex justify-between text-sm mb-1">
+                                        <span className="text-white">{skill.skill}</span>
+                                        <span className="text-accent text-xs bg-accent/10 px-2 py-0.5 rounded">{skill.level}</span>
+                                    </div>
+                                    <div className="w-full h-1.5 bg-surface rounded-full overflow-hidden">
+                                        <div className="h-full bg-accent rounded-full" style={{ width: skill.level === 'Expert' ? '95%' : skill.level === 'Advanced' ? '80%' : '60%' }} />
+                                    </div>
                                 </div>
-                                <div className="w-full h-1.5 bg-surface rounded-full overflow-hidden">
-                                    <div className="h-full bg-accent w-[90%] rounded-full" />
-                                </div>
-                            </div>
-                            <div>
-                                <div className="flex justify-between text-sm mb-1">
-                                    <span className="text-white">Python</span>
-                                    <span className="text-accent text-xs bg-accent/10 px-2 py-0.5 rounded">Intermediate</span>
-                                </div>
-                                <div className="w-full h-1.5 bg-surface rounded-full overflow-hidden">
-                                    <div className="h-full bg-accent w-[75%] rounded-full" />
-                                </div>
-                            </div>
+                            ))}
                         </div>
                     </div>
                 )}
+            </div>
+
+            {/* Jobs Discovery */}
+            <div className="mt-12">
+                <h2 className="text-2xl font-bold text-white mb-6">Verified Job Opportunities</h2>
+                <div className="grid gap-4">
+                    {loading ? (
+                        <div className="text-muted text-center py-8">Searching for matching jobs...</div>
+                    ) : jobs.length === 0 ? (
+                        <div className="glass p-8 text-center text-muted">No matching jobs found for your skills yet.</div>
+                    ) : (
+                        jobs.map(job => (
+                            <div key={job.id} className="glass p-6 rounded-xl border border-white/5 flex flex-col md:flex-row md:items-center justify-between gap-6 hover:border-primary/30 transition-all">
+                                <div>
+                                    <h3 className="text-lg font-bold text-white">{job.title}</h3>
+                                    <p className="text-sm text-primary-light font-medium">{job.recruiters?.company_name || "Enterprise Partner"}</p>
+                                    <div className="flex gap-4 mt-2">
+                                        <span className="text-xs text-muted flex items-center gap-1">
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z" /><circle cx="12" cy="10" r="3" /></svg>
+                                            {job.location}
+                                        </span>
+                                        <span className="text-xs text-muted flex items-center gap-1">
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="20" height="14" x="2" y="7" rx="2" ry="2" /><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" /></svg>
+                                            {job.job_type}
+                                        </span>
+                                    </div>
+                                </div>
+                                <button
+                                    onClick={() => handleApply(job.id)}
+                                    className="btn-outline px-6 py-2 text-sm whitespace-nowrap"
+                                >
+                                    Apply with Passport
+                                </button>
+                            </div>
+                        ))
+                    )}
+                </div>
             </div>
         </div>
     );

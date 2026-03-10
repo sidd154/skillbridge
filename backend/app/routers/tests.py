@@ -37,18 +37,23 @@ async def submit_test(session_id: str, submission: TestSubmission, user_id: str 
     issuer_graph = create_passport_issuer_graph()
     
     issuer_state = {
+        "session_id": session_id,
         "candidate_id": user_id,
-        "test_score": score,
-        "passport_issued": False,
-        "feedback": ""
+        "score": score,
+        "passed": score >= 70,
+        "answers": [{"selected_option": v} for v in submission.answers.values()],
+        "correct_answers": [], # In a real app, fetch this from the session data
+        "extracted_skills": [], # In a real app, fetch from session context
+        "proctoring_score": 100.0
     }
     
     result = issuer_graph.invoke(issuer_state)
     
-    # Mark test as completed
+    # Mark test as completed — use 'passed' column instead of non-existent 'status'
     supabase.table("test_sessions").update({
-        "status": "completed",
-        "score": score
+        "passed": score >= 70, # Threshold for demo
+        "score": score,
+        "completed_at": "now()"
     }).eq("id", session_id).execute()
 
     return {

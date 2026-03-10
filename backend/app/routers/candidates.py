@@ -73,16 +73,14 @@ async def upload_resume(file: UploadFile = File(...), user_id: str = Depends(get
     try:
         test_graph = create_test_generator_graph()
         test_state = {"extracted_skills": skills, "candidate_id": user_id, "generated_questions": []}
-        test_graph.invoke(test_state)
-        
-        # Fetch the session just created — order by id desc (UUID v4 is random, so grab the single last row)
-        session_res = supabase.table("test_sessions").select("id").eq("candidate_id", user_id).limit(1).execute()
-        session_id = session_res.data[0]["id"] if session_res.data else None
+        # Graph returns session_id if save_session_node runs successfully
+        test_result = test_graph.invoke(test_state)
+        session_id = test_result.get("session_id")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Test generation failed: {str(e)}")
     
-    if not session_id:
-        raise HTTPException(status_code=500, detail="Test session was not created. Ensure the Supabase schema (test_sessions table) has been applied.")
+    if not session_id or session_id == "unknown":
+        raise HTTPException(status_code=500, detail="Test session was not created. Ensure the latest Supabase schema has been applied.")
     
     return {
         "message": "Resume parsed and test generated successfully", 

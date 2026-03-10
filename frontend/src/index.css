@@ -1,0 +1,34 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-background text-text font-sans antialiased selection:bg-primary selection:text-white;
+  }
+}
+
+@layer components {
+  /* Dynamic gradient text */
+  .text-gradient {
+    @apply bg-clip-text text-transparent bg-gradient-to-r from-primary to-accent;
+  }
+  
+  /* Glassmorphism utility */
+  .glass {
+    @apply bg-surface/70 backdrop-blur-md border border-white/10 shadow-xl;
+  }
+  
+  /* Button reset and base styling */
+  .btn-base {
+    @apply inline-flex items-center justify-center rounded-lg font-medium transition-all duration-200 active:scale-95 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-background disabled:opacity-50 disabled:pointer-events-none;
+  }
+  
+  .btn-primary {
+    @apply btn-base bg-primary text-white hover:bg-primary-light focus:ring-primary shadow-lg shadow-primary/20;
+  }
+  
+  .btn-outline {
+    @apply btn-base border border-white/20 hover:bg-white/5 hover:border-white/40 focus:ring-white/20;
+  }
+}
